@@ -5,11 +5,13 @@ pragma abicoder v2;
 import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/v3-periphery/contracts/interfaces/IQuoter.sol";
 import { IERC20, SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 interface IUniswapRouter is ISwapRouter {
     function refundETH() external payable;
 }
 
+// TODO: import interface
 interface IUniswapV2Router02 {
     function swapExactTokensForTokens(
         uint256 amountIn,
@@ -60,7 +62,7 @@ interface IUniswapV2Router02 {
     function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
 }
 
-contract AMMSelector {
+contract AMMSelector is Ownable {
     using SafeERC20 for IERC20;
 
     // SushiSwap
@@ -71,17 +73,24 @@ contract AMMSelector {
     IQuoter public constant quoter = IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
 
     // token addresses
-    address private constant BNT = 0xF35cCfbcE1228014F66809EDaFCDB836BFE388f5;
-    address private constant INJ = 0x9108Ab1bb7D054a3C1Cd62329668536f925397e5;
+    // address private constant BNT = 0xF35cCfbcE1228014F66809EDaFCDB836BFE388f5;
+    // address private constant INJ = 0x9108Ab1bb7D054a3C1Cd62329668536f925397e5;
     address private constant DAI = 0xaD6D458402F60fD3Bd25163575031ACDce07538D;
     // address private constant UNI = 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984;
     address private constant WETH9 = 0xc778417E063141139Fce010982780140Aa0cD5Ab;
 
-    constructor() {
-        IERC20(BNT).safeApprove(address(sushiRouter), type(uint256).max);
+    // mapping(string => address) public tokenToAddress;
+
+    constructor() {}
+
+    // approve this contract to transfer msg.sender token
+    // TODO uniswap v3 approve
+    function approveContract(address tokenIn) external {
+        IERC20(tokenIn).safeApprove(address(sushiRouter), type(uint256).max);
     }
 
-    function _tradeOnSushi(
+    // swap exact token for token or ETH on sushi
+    function _swapOnSushi(
         address _tokenIn,
         address _tokenOut,
         uint256 amountIn,
@@ -90,13 +99,42 @@ contract AMMSelector {
     ) private {
         address recipient = msg.sender;
 
-        sushiRouter.swapExactTokensForTokens(
-            amountIn,
+        if (_tokenOut == WETH9) {
+            sushiRouter.swapExactTokensForETH(
+                amountIn,
+                amountOutMin,
+                _getPathForSushiSwap(_tokenIn, WETH9),
+                recipient,
+                deadline
+            );
+        } else {
+            sushiRouter.swapExactTokensForTokens(
+                amountIn,
+                amountOutMin,
+                _getPathForSushiSwap(_tokenIn, _tokenOut),
+                recipient,
+                deadline
+            );
+        }
+    }
+
+    // swap exact ETH for token on sushi
+    function _swapOnSushi(
+        address _tokenOut,
+        uint256 amountOutMin,
+        uint256 deadline
+    ) private {
+        address recipient = msg.sender;
+
+        sushiRouter.swapExactETHForTokens{ value: msg.value }(
             amountOutMin,
-            _getPathForSushiSwap(_tokenIn, _tokenOut),
+            _getPathForSushiSwap(WETH9, _tokenOut),
             recipient,
             deadline
         );
+
+        (bool success, ) = msg.sender.call{ value: address(this).balance }("");
+        require(success, "refund failed");
     }
 
     function _getPathForSushiSwap(address _tokenIn, address _tokenOut) private pure returns (address[] memory) {
@@ -107,8 +145,9 @@ contract AMMSelector {
         return path;
     }
 
-    // sushiswap swap
-    function ammSwap(
+    // swap with token for token or ETH on Sushi
+    // swap for ETH with tokenOut == WETH
+    function swapTokensOnSushiswap(
         address tokenIn,
         address tokenOut,
         uint256 amount,
@@ -116,14 +155,27 @@ contract AMMSelector {
         uint256 amountOutMinSushiSwap
     ) external payable {
         require(IERC20(tokenIn).allowance(address(this), address(sushiRouter)) != 0, "This contract is approved yet.");
-        require(IERC20(tokenIn).allowance(msg.sender, address(this)) > amount, "Allowance is smaller than amount");
+        require(
+            IERC20(tokenIn).allowance(msg.sender, address(this)) > amount,
+            "The allowance to this contract is smaller than amount"
+        );
 
         IERC20(tokenIn).transferFrom(msg.sender, address(this), amount);
-        _tradeOnSushi(tokenIn, tokenOut, IERC20(tokenIn).balanceOf(address(this)), amountOutMinSushiSwap, deadline);
+        _swapOnSushi(tokenIn, tokenOut, IERC20(tokenIn).balanceOf(address(this)), amountOutMinSushiSwap, deadline);
     }
 
-    // sushiswap preview
-    function getAmountOutMin(
+    // swap with ETH for token on Sushi
+    function swapEthOnSushiswap(
+        address tokenOut,
+        uint256 deadline,
+        uint256 amountOutMinSushiSwap
+    ) external payable {
+        require(msg.value > 0, "Must pass ethers");
+        _swapOnSushi(tokenOut, amountOutMinSushiSwap, deadline);
+    }
+
+    // sushiswap preview token swap
+    function getAmountOut(
         address _tokenIn,
         address _tokenOut,
         uint256 _amountIn
@@ -135,11 +187,16 @@ contract AMMSelector {
         return amountOutMins;
     }
 
-    // uniswap swap
-    function convertExactEthToDai() external payable {
+    // Use this function with .callStatic()
+    function getAmountOut(address _tokenOut) external payable returns (uint256[] memory) {
+        uint256[] memory amountOutMins = sushiRouter.getAmountsOut(msg.value, _getPathForSushiSwap(WETH9, _tokenOut));
+        return amountOutMins;
+    }
+
+    // uniswap ETH swap
+    function convertExactEthToDai(uint256 deadline) external payable {
         require(msg.value > 0, "Must pass non 0 ETH amount");
 
-        uint256 deadline = block.timestamp + 15;
         address tokenIn = WETH9;
         address tokenOut = DAI;
         uint24 fee = 3000;

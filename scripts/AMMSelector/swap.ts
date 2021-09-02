@@ -30,17 +30,17 @@ async function main() {
   );
   console.log("2: ", swapTokensForExactTokens);
 
-  // const swapExactETHForTokens = await ammSelector.swapExactETHForTokens(addr.UNI, deadline, "1", { value: "1000" });
-  // console.log("3: ", swapExactETHForTokens);
+  const swapExactETHForTokens = await ammSelector.swapExactETHForTokens(addr.UNI, deadline, "1", { value: "1000" });
+  console.log("3: ", swapExactETHForTokens);
 
-  // const swapTokensForExactETH = await ammSelector.swapTokensForExactETH(addr.UNI, "10", deadline, "10000");
-  // console.log("4: ", swapTokensForExactETH);
+  const swapTokensForExactETH = await ammSelector.swapTokensForExactETH(addr.UNI, "10", deadline, "10000");
+  console.log("4: ", swapTokensForExactETH);
 
-  // const swapExactTokensForETH = await ammSelector.swapExactTokensForETH(addr.UNI, "1000", deadline, "1");
-  // console.log("5: ", swapExactTokensForETH);
+  const swapExactTokensForETH = await ammSelector.swapExactTokensForETH(addr.UNI, "1000", deadline, "1");
+  console.log("5: ", swapExactTokensForETH);
 
-  // const swapETHForExactTokens = await ammSelector.swapETHForExactTokens(addr.UNI, "1000", deadline, { value: "10000" });
-  // console.log("6: ", swapETHForExactTokens);
+  const swapETHForExactTokens = await ammSelector.swapETHForExactTokens(addr.UNI, "1000", deadline, { value: "10000" });
+  console.log("6: ", swapETHForExactTokens);
 
   // multi path swap
   const PathArr1: string[] = [addr.WETH, addr.DAI];

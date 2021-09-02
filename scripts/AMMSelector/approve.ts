@@ -8,11 +8,8 @@ async function main() {
   const ammSelectorFactory: AMMSelector__factory = await ethers.getContractFactory("AMMSelector");
   const ammSelector: AMMSelector = <AMMSelector>await ammSelectorFactory.attach(contractAddr);
 
-  // console.log(await ammSelector.approveContract(addr.DAI));
-  // console.log(await ammSelector.approveContract(addr.UNI));
-
+  console.log(await ammSelector.approveContract(addr.UNI));
   console.log(await approve(addr.UNI, contractAddr, "50000"));
-  // console.log(await approve(addr.DAI, contractAddr, "20000"));
 }
 
 async function approve(erc20: string, spender: string, amount: string) {

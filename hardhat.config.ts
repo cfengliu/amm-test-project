@@ -13,6 +13,8 @@ import { config as dotenvConfig } from "dotenv";
 import { HardhatUserConfig } from "hardhat/config";
 import { NetworkUserConfig } from "hardhat/types";
 
+import "@nomiclabs/hardhat-etherscan";
+
 dotenvConfig({ path: resolve(__dirname, "./.env") });
 
 const chainIds = {
@@ -40,6 +42,10 @@ const alchemyApiKey: string | undefined = process.env.ALCHEMY_API_KEY;
 if (!alchemyApiKey) {
   throw new Error("Please set your INFURA_API_KEY in a .env file");
 }
+const etherscanApiKey: string | undefined = process.env.ETHERSCAN_API_KEY;
+if (!etherscanApiKey) {
+  throw new Error("Please set your INFURA_API_KEY in a .env file");
+}
 
 function getChainConfig(network: keyof typeof chainIds): NetworkUserConfig {
   const url: string = "https://" + network + ".infura.io/v3/" + infuraApiKey;
@@ -52,7 +58,8 @@ function getChainConfig(network: keyof typeof chainIds): NetworkUserConfig {
     },
     chainId: chainIds[network],
     url,
-    gasPrice: 1500001000,
+    // gasPrice: 1500001000,
+    // gas: 2000000
   };
 }
 
@@ -110,6 +117,9 @@ const config: HardhatUserConfig = {
   typechain: {
     outDir: "typechain",
     target: "ethers-v5",
+  },
+  etherscan: {
+    apiKey: etherscanApiKey,
   },
 };
 

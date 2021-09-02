@@ -73,68 +73,23 @@ contract AMMSelector is Ownable {
     IQuoter public constant quoter = IQuoter(0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6);
 
     // token addresses
-    // address private constant BNT = 0xF35cCfbcE1228014F66809EDaFCDB836BFE388f5;
-    // address private constant INJ = 0x9108Ab1bb7D054a3C1Cd62329668536f925397e5;
-    address private constant DAI = 0xaD6D458402F60fD3Bd25163575031ACDce07538D;
-    // address private constant UNI = 0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984;
-    address private constant WETH9 = 0xc778417E063141139Fce010982780140Aa0cD5Ab;
+    address private constant WETH9 = 0xd0A1E359811322d97991E03f863a0C30C2cF029C;
 
-    // mapping(string => address) public tokenToAddress;
+    modifier tokenTransferCheck(address token, uint256 amount) {
+        require(IERC20(token).allowance(address(this), address(sushiRouter)) != 0, "This contract must be approved.");
+        require(
+            IERC20(token).allowance(msg.sender, address(this)) > amount,
+            "The allowance must be larger than amount"
+        );
+        _;
+    }
 
     constructor() {}
 
     // approve this contract to transfer msg.sender token
-    // TODO uniswap v3 approve
     function approveContract(address tokenIn) external {
         IERC20(tokenIn).safeApprove(address(sushiRouter), type(uint256).max);
-    }
-
-    // swap exact token for token or ETH on sushi
-    function _swapOnSushi(
-        address _tokenIn,
-        address _tokenOut,
-        uint256 amountIn,
-        uint256 amountOutMin,
-        uint256 deadline
-    ) private {
-        address recipient = msg.sender;
-
-        if (_tokenOut == WETH9) {
-            sushiRouter.swapExactTokensForETH(
-                amountIn,
-                amountOutMin,
-                _getPathForSushiSwap(_tokenIn, WETH9),
-                recipient,
-                deadline
-            );
-        } else {
-            sushiRouter.swapExactTokensForTokens(
-                amountIn,
-                amountOutMin,
-                _getPathForSushiSwap(_tokenIn, _tokenOut),
-                recipient,
-                deadline
-            );
-        }
-    }
-
-    // swap exact ETH for token on sushi
-    function _swapOnSushi(
-        address _tokenOut,
-        uint256 amountOutMin,
-        uint256 deadline
-    ) private {
-        address recipient = msg.sender;
-
-        sushiRouter.swapExactETHForTokens{ value: msg.value }(
-            amountOutMin,
-            _getPathForSushiSwap(WETH9, _tokenOut),
-            recipient,
-            deadline
-        );
-
-        (bool success, ) = msg.sender.call{ value: address(this).balance }("");
-        require(success, "refund failed");
+        IERC20(tokenIn).safeApprove(address(uniswapRouter), type(uint256).max);
     }
 
     function _getPathForSushiSwap(address _tokenIn, address _tokenOut) private pure returns (address[] memory) {
@@ -145,37 +100,134 @@ contract AMMSelector is Ownable {
         return path;
     }
 
-    // swap with token for token or ETH on Sushi
-    // swap for ETH with tokenOut == WETH
-    function swapTokensOnSushiswap(
+    function swapExactTokensForTokens(
         address tokenIn,
         address tokenOut,
-        uint256 amount,
+        uint256 amountIn,
         uint256 deadline,
-        uint256 amountOutMinSushiSwap
-    ) external payable {
-        require(IERC20(tokenIn).allowance(address(this), address(sushiRouter)) != 0, "This contract is approved yet.");
-        require(
-            IERC20(tokenIn).allowance(msg.sender, address(this)) > amount,
-            "The allowance to this contract is smaller than amount"
+        uint256 amountOutMin
+    ) external tokenTransferCheck(tokenIn, amountIn) returns (uint256[] memory) {
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+
+        uint256[] memory amounts = sushiRouter.swapExactTokensForTokens(
+            amountIn,
+            amountOutMin,
+            _getPathForSushiSwap(tokenIn, tokenOut),
+            msg.sender,
+            deadline
         );
 
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amount);
-        _swapOnSushi(tokenIn, tokenOut, IERC20(tokenIn).balanceOf(address(this)), amountOutMinSushiSwap, deadline);
+        return amounts;
     }
 
-    // swap with ETH for token on Sushi
-    function swapEthOnSushiswap(
+    function swapTokensForExactTokens(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountOut,
+        uint256 deadline,
+        uint256 amountInMax
+    ) external tokenTransferCheck(tokenIn, amountInMax) returns (uint256[] memory) {
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountInMax);
+
+        uint256[] memory amounts = sushiRouter.swapTokensForExactTokens(
+            amountOut,
+            amountInMax,
+            _getPathForSushiSwap(tokenIn, tokenOut),
+            msg.sender,
+            deadline
+        );
+
+        if (IERC20(tokenIn).balanceOf(address(this)) > 0) {
+            IERC20(tokenIn).transfer(msg.sender, IERC20(tokenIn).balanceOf(address(this)));
+        }
+
+        return amounts;
+    }
+
+    function swapETHForExactTokens(
+        address tokenOut,
+        uint256 amountOut,
+        uint256 deadline
+    ) external payable returns (uint256[] memory) {
+        require(msg.value > 0, "Must send ethers");
+
+        uint256[] memory amounts = sushiRouter.swapETHForExactTokens{ value: msg.value }(
+            amountOut,
+            _getPathForSushiSwap(WETH9, tokenOut),
+            msg.sender,
+            deadline
+        );
+
+        (bool success, ) = msg.sender.call{ value: address(this).balance }("");
+        require(success, "Refund failed");
+
+        return amounts;
+    }
+
+    function swapTokensForExactETH(
+        address tokenIn,
+        uint256 amountOut,
+        uint256 deadline,
+        uint256 amountInMax
+    ) external tokenTransferCheck(tokenIn, amountInMax) returns (uint256[] memory) {
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountInMax);
+
+        uint256[] memory amounts = sushiRouter.swapTokensForExactETH(
+            amountOut,
+            amountInMax,
+            _getPathForSushiSwap(tokenIn, WETH9),
+            msg.sender,
+            deadline
+        );
+
+        if (IERC20(tokenIn).balanceOf(address(this)) > 0) {
+            IERC20(tokenIn).transfer(msg.sender, IERC20(tokenIn).balanceOf(address(this)));
+        }
+
+        return amounts;
+    }
+
+    function swapExactETHForTokens(
         address tokenOut,
         uint256 deadline,
-        uint256 amountOutMinSushiSwap
-    ) external payable {
+        uint256 amountOutMin
+    ) external payable returns (uint256[] memory) {
         require(msg.value > 0, "Must pass ethers");
-        _swapOnSushi(tokenOut, amountOutMinSushiSwap, deadline);
+
+        uint256[] memory amounts = sushiRouter.swapExactETHForTokens{ value: msg.value }(
+            amountOutMin,
+            _getPathForSushiSwap(WETH9, tokenOut),
+            msg.sender,
+            deadline
+        );
+
+        (bool success, ) = msg.sender.call{ value: address(this).balance }("");
+        require(success, "refund failed");
+
+        return amounts;
+    }
+
+    // swap with token for token or ETH on Sushi
+    function swapExactTokensForETH(
+        address tokenIn,
+        uint256 amountIn,
+        uint256 deadline,
+        uint256 amountOutMin
+    ) external payable tokenTransferCheck(tokenIn, amountIn) {
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+
+        address recipient = msg.sender;
+        sushiRouter.swapExactTokensForETH(
+            amountIn,
+            amountOutMin,
+            _getPathForSushiSwap(tokenIn, WETH9),
+            recipient,
+            deadline
+        );
     }
 
     // sushiswap preview token swap
-    function getAmountOut(
+    function getAmountOutOnSushiswap(
         address _tokenIn,
         address _tokenOut,
         uint256 _amountIn
@@ -187,98 +239,98 @@ contract AMMSelector is Ownable {
         return amountOutMins;
     }
 
+    // sushiswap preview ETH swap
     // Use this function with .callStatic()
-    function getAmountOut(address _tokenOut) external payable returns (uint256[] memory) {
+    function getAmountOutOnSushiswap(address _tokenOut) external payable returns (uint256[] memory) {
         uint256[] memory amountOutMins = sushiRouter.getAmountsOut(msg.value, _getPathForSushiSwap(WETH9, _tokenOut));
         return amountOutMins;
     }
 
-    // uniswap ETH swap
-    function convertExactEthToDai(uint256 deadline) external payable {
-        require(msg.value > 0, "Must pass non 0 ETH amount");
+    // uniswap multi path ETH swap
+    function swapEthOnUniswap(
+        bytes memory path,
+        uint256 deadline,
+        uint256 amountOutMinimum
+    ) external payable {
+        require(msg.value > 0, "Must pass ethers");
 
-        address tokenIn = WETH9;
-        address tokenOut = DAI;
-        uint24 fee = 3000;
-        address recipient = msg.sender;
-        uint256 amountIn = msg.value;
-        uint256 amountOutMinimum = 1;
-        uint160 sqrtPriceLimitX96 = 0;
+        ISwapRouter.ExactInputParams memory params = ISwapRouter.ExactInputParams(
+            path,
+            msg.sender,
+            deadline,
+            msg.value,
+            amountOutMinimum
+        );
 
-        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter.ExactInputSingleParams(
-            tokenIn,
-            tokenOut,
-            fee,
-            recipient,
+        uniswapRouter.exactInput{ value: msg.value }(params);
+        uniswapRouter.refundETH();
+
+        // refund leftover ETH to user
+        (bool success, ) = msg.sender.call{ value: address(this).balance }("");
+        require(success, "refund failed");
+    }
+
+    // uniswap multi path token swap for exact input
+    function swapTokensInOnUniswap(
+        bytes memory path,
+        address tokenIn,
+        uint256 amountIn,
+        uint256 deadline,
+        uint256 amountOutMinimum
+    ) external payable tokenTransferCheck(tokenIn, amountIn) {
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+
+        ISwapRouter.ExactInputParams memory params = ISwapRouter.ExactInputParams(
+            path,
+            msg.sender,
             deadline,
             amountIn,
-            amountOutMinimum,
-            sqrtPriceLimitX96
+            amountOutMinimum
         );
 
-        uniswapRouter.exactInputSingle{ value: msg.value }(params);
+        uniswapRouter.exactInput(params);
         uniswapRouter.refundETH();
-
-        // refund leftover ETH to user
-        (bool success, ) = msg.sender.call{ value: address(this).balance }("");
-        require(success, "refund failed");
     }
 
-    function convertEthToExactDai(uint256 daiAmount) external payable {
-        require(daiAmount > 0, "Must pass non 0 DAI amount");
-        require(msg.value > 0, "Must pass non 0 ETH amount");
+    // uniswap token swap for exact output
+    function swapTokensOutOnUniswap(
+        bytes memory path,
+        address tokenIn,
+        uint256 amountOut,
+        uint256 deadline,
+        uint256 amountInMaximum
+    ) external payable tokenTransferCheck(tokenIn, amountInMaximum) {
+        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountInMaximum);
 
-        uint256 deadline = block.timestamp + 15;
-        address tokenIn = WETH9;
-        address tokenOut = DAI;
-        uint24 fee = 3000;
-        address recipient = msg.sender;
-        uint256 amountOut = daiAmount;
-        uint256 amountInMaximum = msg.value;
-        uint160 sqrtPriceLimitX96 = 0;
-
-        ISwapRouter.ExactOutputSingleParams memory params = ISwapRouter.ExactOutputSingleParams(
-            tokenIn,
-            tokenOut,
-            fee,
-            recipient,
+        ISwapRouter.ExactOutputParams memory params = ISwapRouter.ExactOutputParams(
+            path,
+            msg.sender,
             deadline,
             amountOut,
-            amountInMaximum,
-            sqrtPriceLimitX96
+            amountInMaximum
         );
 
-        uniswapRouter.exactOutputSingle{ value: msg.value }(params);
+        uniswapRouter.exactOutput(params);
         uniswapRouter.refundETH();
 
-        // refund leftover ETH to user
+        if (IERC20(tokenIn).balanceOf(address(this)) > 0) {
+            IERC20(tokenIn).transfer(msg.sender, IERC20(tokenIn).balanceOf(address(this)));
+        }
+    }
+
+    // uniswap multipath preview for exact output
+    function getAmountInOnUniswap(bytes memory path, uint256 amountOut) external payable returns (uint256) {
+        return quoter.quoteExactOutput(path, amountOut);
+    }
+
+    // uniswap multipath preview for exact input
+    function getAmountOutOnUniswap(bytes memory path, uint256 amountIn) external payable returns (uint256) {
+        return quoter.quoteExactInput(path, amountIn);
+    }
+
+    function withdraw() public onlyOwner {
         (bool success, ) = msg.sender.call{ value: address(this).balance }("");
         require(success, "refund failed");
-    }
-
-    // uniswap preview for exact output
-    function getEstimatedETHforDAI(uint256 daiAmount) external payable returns (uint256) {
-        address tokenIn = WETH9;
-        address tokenOut = DAI;
-        uint24 fee = 3000;
-        uint160 sqrtPriceLimitX96 = 0;
-
-        return quoter.quoteExactOutputSingle(tokenIn, tokenOut, fee, daiAmount, sqrtPriceLimitX96);
-    }
-
-    // uniswap preview for exact input
-    function getEstimatedDAIforETH(uint256 ethAmount) external payable returns (uint256) {
-        address tokenIn = WETH9;
-        address tokenOut = DAI;
-        uint24 fee = 3000;
-        uint160 sqrtPriceLimitX96 = 0;
-
-        return quoter.quoteExactInputSingle(tokenIn, tokenOut, fee, ethAmount, sqrtPriceLimitX96);
-    }
-
-    // ERC20 get token balance
-    function getTokenBalance(address tokenAddr, address owner) public view returns (uint256) {
-        return IERC20(tokenAddr).balanceOf(owner);
     }
 
     receive() external payable {}

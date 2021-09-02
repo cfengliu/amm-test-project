@@ -25,6 +25,7 @@
     "@types/node": "^16.7.1",
     "@typescript-eslint/eslint-plugin": "^4.29.2",
     "@typescript-eslint/parser": "^4.29.2",
+    "@uniswap/v3-sdk": "^3.3.2",
     "chai": "^4.3.4",
     "commitizen": "^4.2.4",
     "cross-env": "^7.0.3",
@@ -81,7 +82,10 @@
     "typechain": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat typechain"
   },
   "dependencies": {
+    "@nomiclabs/hardhat-etherscan": "^2.1.6",
     "@openzeppelin/contracts": "^4.3.0",
+    "@uniswap/sdk-core": "^3.0.1",
+    "@uniswap/v2-sdk": "^3.0.0",
     "@uniswap/v3-periphery": "^1.1.1",
     "mkdirp": "^1.0.4",
     "semver": "^7.3.5"

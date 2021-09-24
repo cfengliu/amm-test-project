@@ -48,8 +48,8 @@ if (!etherscanApiKey) {
 }
 
 function getChainConfig(network: keyof typeof chainIds): NetworkUserConfig {
-  const url: string = "https://" + network + ".infura.io/v3/" + infuraApiKey;
-  // const url: string = "https://eth-" + network + ".alchemyapi.io/v2/" + alchemyApiKey;
+  // const url: string = "https://" + network + ".infura.io/v3/" + infuraApiKey;
+  const url: string = "https://eth-" + network + ".alchemyapi.io/v2/" + alchemyApiKey;
   return {
     accounts: {
       count: 10,
